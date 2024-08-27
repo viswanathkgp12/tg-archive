@@ -230,6 +230,14 @@ div.body > div.text {
 	.messages .message {
 		display: flex;
 		margin-bottom: 35px;
+		border-start-start-radius: 15px;
+        box-shadow: 0 1px 2px #10232f26;
+        background-color: #fff;
+        z-index: 2;
+        border-start-end-radius: 15px;
+        border-end-start-radius: 0px;
+        border-end-end-radius: 15px;
+        padding: 15px 15px 15px 15px;
 	}
 	.messages .message:hover {
 		background: #fcfcfc;

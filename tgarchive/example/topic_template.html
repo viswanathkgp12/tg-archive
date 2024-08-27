@@ -78,7 +78,7 @@
 				</ul>
 			{% endif %}
 
-			<ul class="messages">
+			<ul class="messages" style="padding: 20px 5% 20px 5%;">
 				{% for m in messages %}
 					{% set day = m.date.strftime("%d %B %Y") %}
 					<li class="message type-{{ m.type }}" id="{{ m.id }}">
@@ -92,7 +92,7 @@
 							<div class="meta">
 								<a href="{{ config.telegram_url.format(id=m.user.username) }}" class="username" rel="noreferer nopener nofollow" target="_blank">
 									{% if config.show_sender_fullname %}
-										{{ m.user.first_name }} {{ m.user.last_name }} (@{{ m.user.username }})
+										{{ m.user.first_name or '' }} {{ m.user.last_name or '' }} (@{{ m.user.username }})
 									{% else %}
 										@{{ m.user.username }}
 									{% endif %}
@@ -112,6 +112,16 @@
 
 								<span class="date">{{ m.date.strftime("%I:%M %p, %d %b %Y") }}</span>
 							</div>
+
+							{% if m.reply_title and m.reply_subtitle %}
+							<div class="ripple" style="margin: 0 1px 0.5rem;background: #eef6fd;inset-inline-start: 0;top: 0;bottom: 0;border-start-end-radius: 15px;border-end-end-radius: 15px;display: flex;">
+								<div class="ripple-content" style="padding: 3px 0;padding-inline-end: .375rem;margin-inline-start: .5rem;display: block;">
+									<div class="reply-title" style="position: relative;white-space: nowrap;text-overflow: ellipsis;overflow: hidden;color: #a5a5b5;">{{ m.reply_title }}</div>
+									<div class="reply-subtitle" style="text-overflow: ellipsis;overflow: hidden;font-size: 14px;">{{ m.reply_subtitle }}</div>
+								</div>
+							</div>
+							{% endif %}
+
 							<div class="text">
 								{% if m.type == "message" %}
 									{{ nl2br(m.content | escape) | safe | urlize }}

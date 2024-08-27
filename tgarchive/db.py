@@ -56,6 +56,9 @@ Topic = namedtuple(
 Message = namedtuple(
     "Message", ["id", "type", "date", "edit_date", "content", "reply_to", "reply_to_topic", "user", "media", "topic"])
 
+MessageWithReply = namedtuple(
+    "Message", ["id", "type", "date", "edit_date", "content", "reply_to", "reply_title", "reply_subtitle",  "reply_to_topic", "user", "media", "topic"])
+
 Media = namedtuple(
     "Media", ["id", "type", "url", "title", "description", "thumb"])
 
@@ -189,24 +192,27 @@ class DB:
         for r in cur.fetchall():
             yield self._make_message(r)
 
-    def get_messages_by_topic(self, topic, last_id=0, limit=500) -> Iterator[Message]:
+    def get_messages_by_topic(self, topic, last_id=0, limit=500) -> Iterator[MessageWithReply]:
         cur = self.conn.cursor()
         cur.execute("""
             SELECT messages.id, messages.type, messages.date, messages.edit_date,
             messages.content, messages.reply_to, messages.reply_to_topic, messages.user_id,
             users.username, users.first_name, users.last_name, users.tags, users.avatar,
             media.id, media.type, media.url, media.title, media.description, media.thumb,
-            topics.id, topics.title
+            topics.id, topics.title,
+            COALESCE(u2.first_name, "") || " " || COALESCE(u2.last_name, "")  AS reply_title, m2.content AS reply_subtitle
             FROM messages
             LEFT JOIN users ON (users.id = messages.user_id)
             LEFT JOIN media ON (media.id = messages.media_id)
             LEFT JOIN topics ON (topics.id = messages.reply_to_topic)
+            LEFT JOIN messages m2 ON (messages.reply_to = m2.id)
+            LEFT JOIN users u2 ON (u2.id = m2.user_id)
             WHERE topics.id = ?
             AND messages.id > ? ORDER by messages.id LIMIT ?
             """, (topic.id, last_id, limit))
 
         for r in cur.fetchall():
-            yield self._make_message(r)
+            yield self._make_message_with_reply(r)
 
     def get_message_count(self, year, month) -> int:
         date = "{}{:02d}".format(year, month)
@@ -284,7 +290,49 @@ class DB:
         """Makes a Message() object from an SQL result tuple."""
         id, typ, date, edit_date, content, reply_to, reply_to_topic, \
             user_id, username, first_name, last_name, tags, avatar, \
-            media_id, media_type, media_url, media_title, media_description, media_thumb, topic_id, topic_title = m
+            media_id, media_type, media_url, media_title, media_description, media_thumb = m
+
+        md = None
+        if media_id:
+            desc = media_description
+            if media_type == "poll":
+                desc = json.loads(media_description)
+
+            md = Media(id=media_id,
+                       type=media_type,
+                       url=media_url,
+                       title=media_title,
+                       description=desc,
+                       thumb=media_thumb)
+
+        date = pytz.utc.localize(date) if date else None
+        edit_date = pytz.utc.localize(edit_date) if edit_date else None
+
+        if self.tz:
+            date = date.astimezone(self.tz) if date else None
+            edit_date = edit_date.astimezone(self.tz) if edit_date else None
+
+        return Message(id=id,
+                       type=typ,
+                       date=date,
+                       edit_date=edit_date,
+                       content=content,
+                       reply_to=reply_to,
+                       reply_to_topic=reply_to_topic,
+                       user=User(id=user_id,
+                                 username=username,
+                                 first_name=first_name,
+                                 last_name=last_name,
+                                 tags=tags,
+                                 avatar=avatar),
+                       media=md,
+                       topic=None)
+
+    def _make_message_with_reply(self, m) -> MessageWithReply:
+        """Makes a Message() object from an SQL result tuple."""
+        id, typ, date, edit_date, content, reply_to, reply_to_topic, \
+            user_id, username, first_name, last_name, tags, avatar, \
+            media_id, media_type, media_url, media_title, media_description, media_thumb, topic_id, topic_title, reply_title, reply_subtitle = m
 
         md = None
         if media_id:
@@ -310,13 +358,15 @@ class DB:
             date = date.astimezone(self.tz) if date else None
             edit_date = edit_date.astimezone(self.tz) if edit_date else None
 
-        return Message(id=id,
+        return MessageWithReply(id=id,
                        type=typ,
                        date=date,
                        edit_date=edit_date,
                        content=content,
                        reply_to=reply_to,
                        reply_to_topic=reply_to_topic,
+                       reply_title=reply_title,
+                       reply_subtitle=reply_subtitle,
                        user=User(id=user_id,
                                  username=username,
                                  first_name=first_name,
