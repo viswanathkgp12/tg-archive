@@ -186,6 +186,7 @@ ul {
 .content {
 	background: #fff;
     flex: 68%;
+    max-width: 68%;
     margin-left: 12%;
     padding: 30px;
     min-height: 100vh;
@@ -194,7 +195,8 @@ ul {
 
 .chart {
     width: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    max-height: 700px;
 }
 
 div.body > div.text {
@@ -281,7 +283,6 @@ div.body > div.text {
 	.messages .media {
 	    padding: 5px 15px;
 	    margin: 10px 0 0 15px;
-	    border-left: 3px solid #ddd;
 	}
 		.messages .media .thumb {
 			max-width: 100%;

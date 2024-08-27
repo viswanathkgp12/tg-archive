@@ -8,17 +8,9 @@ import pytz
 from typing import Iterator
 
 schema = """
-CREATE table messages (
+CREATE table topics (
     id INTEGER NOT NULL PRIMARY KEY,
-    type TEXT NOT NULL,
-    date TIMESTAMP NOT NULL,
-    edit_date TIMESTAMP,
-    content TEXT,
-    reply_to INTEGER,
-    user_id INTEGER,
-    media_id INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id),
-    FOREIGN KEY(media_id) REFERENCES media(id)
+    title TEXT NOT NULL
 );
 ##
 CREATE table users (
@@ -38,13 +30,31 @@ CREATE table media (
     description TEXT,
     thumb TEXT
 );
+##
+CREATE table messages (
+    id INTEGER NOT NULL PRIMARY KEY,
+    type TEXT NOT NULL,
+    date TIMESTAMP NOT NULL,
+    edit_date TIMESTAMP,
+    content TEXT,
+    reply_to INTEGER,
+    reply_to_topic INTEGER,
+    user_id INTEGER,
+    media_id INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(media_id) REFERENCES media(id),
+    FOREIGN KEY(reply_to_topic) REFERENCES topics(id)
+);
 """
 
 User = namedtuple(
     "User", ["id", "username", "first_name", "last_name", "tags", "avatar"])
 
+Topic = namedtuple(
+    "Topic", ["id", "title", "message_count"])
+
 Message = namedtuple(
-    "Message", ["id", "type", "date", "edit_date", "content", "reply_to", "user", "media"])
+    "Message", ["id", "type", "date", "edit_date", "content", "reply_to", "reply_to_topic", "user", "media", "topic"])
 
 Media = namedtuple(
     "Media", ["id", "type", "url", "title", "description", "thumb"])
@@ -96,6 +106,20 @@ class DB:
 
         id, date = res
         return id, date
+
+    def get_topics(self) -> Iterator[Topic]:
+        """
+        Get the list of all unique topics
+        """
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT id, title FROM topics ORDER BY id
+        """)
+
+        for r in cur.fetchall():
+            total = self.get_message_count_for_topic(r[0])
+            yield Topic(id=r[0],
+                        title=r[1], message_count=total)
 
     def get_timeline(self) -> Iterator[Month]:
         """
@@ -165,6 +189,25 @@ class DB:
         for r in cur.fetchall():
             yield self._make_message(r)
 
+    def get_messages_by_topic(self, topic, last_id=0, limit=500) -> Iterator[Message]:
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT messages.id, messages.type, messages.date, messages.edit_date,
+            messages.content, messages.reply_to, messages.reply_to_topic, messages.user_id,
+            users.username, users.first_name, users.last_name, users.tags, users.avatar,
+            media.id, media.type, media.url, media.title, media.description, media.thumb,
+            topics.id, topics.title
+            FROM messages
+            LEFT JOIN users ON (users.id = messages.user_id)
+            LEFT JOIN media ON (media.id = messages.media_id)
+            LEFT JOIN topics ON (topics.id = messages.reply_to_topic)
+            WHERE topics.id = ?
+            AND messages.id > ? ORDER by messages.id LIMIT ?
+            """, (topic.id, last_id, limit))
+
+        for r in cur.fetchall():
+            yield self._make_message(r)
+
     def get_message_count(self, year, month) -> int:
         date = "{}{:02d}".format(year, month)
 
@@ -172,6 +215,15 @@ class DB:
         cur.execute("""
             SELECT COUNT(*) FROM messages WHERE strftime('%Y%m', date) = ?
             """, (date,))
+
+        total, = cur.fetchone()
+        return total
+
+    def get_message_count_for_topic(self, topic_id) -> int:
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM messages WHERE reply_to_topic = ?
+            """, (topic_id,))
 
         total, = cur.fetchone()
         return total
@@ -198,11 +250,20 @@ class DB:
                      m.thumb)
                     )
 
+    def insert_topic(self, t: Topic):
+        cur = self.conn.cursor()
+        cur.execute("""INSERT OR REPLACE INTO topics
+            (id, title)
+            VALUES(?, ?)""",
+                    (t.id,
+                     t.title)
+                    )
+
     def insert_message(self, m: Message):
         cur = self.conn.cursor()
         cur.execute("""INSERT OR REPLACE INTO messages
-            (id, type, date, edit_date, content, reply_to, user_id, media_id)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, type, date, edit_date, content, reply_to, reply_to_topic, user_id, media_id)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (m.id,
                      m.type,
                      m.date.strftime("%Y-%m-%d %H:%M:%S"),
@@ -210,6 +271,7 @@ class DB:
                          "%Y-%m-%d %H:%M:%S") if m.edit_date else None,
                      m.content,
                      m.reply_to,
+                     m.reply_to_topic,
                      m.user.id,
                      m.media.id if m.media else None)
                     )
@@ -220,9 +282,9 @@ class DB:
 
     def _make_message(self, m) -> Message:
         """Makes a Message() object from an SQL result tuple."""
-        id, typ, date, edit_date, content, reply_to, \
+        id, typ, date, edit_date, content, reply_to, reply_to_topic, \
             user_id, username, first_name, last_name, tags, avatar, \
-            media_id, media_type, media_url, media_title, media_description, media_thumb = m
+            media_id, media_type, media_url, media_title, media_description, media_thumb, topic_id, topic_title = m
 
         md = None
         if media_id:
@@ -237,6 +299,10 @@ class DB:
                        description=desc,
                        thumb=media_thumb)
 
+        t = None
+        if topic_id:
+            t = Topic(id=topic_id, title=topic_title, message_count=None)
+
         date = pytz.utc.localize(date) if date else None
         edit_date = pytz.utc.localize(edit_date) if edit_date else None
 
@@ -250,10 +316,12 @@ class DB:
                        edit_date=edit_date,
                        content=content,
                        reply_to=reply_to,
+                       reply_to_topic=reply_to_topic,
                        user=User(id=user_id,
                                  username=username,
                                  first_name=first_name,
                                  last_name=last_name,
                                  tags=tags,
                                  avatar=avatar),
-                       media=md)
+                       media=md,
+                       topic=t)

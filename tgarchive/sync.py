@@ -8,10 +8,10 @@ import shutil
 import time
 
 from PIL import Image
-from telethon import TelegramClient, errors, sync
+from telethon import TelegramClient, errors, sync, functions
 import telethon.tl.types
 
-from .db import User, Message, Media
+from .db import User, Message, Media, Topic
 
 
 class Sync:
@@ -49,6 +49,7 @@ class Sync:
                 last_id, last_date))
 
         group_id = self._get_group_id(self.config["group"])
+        self._group_topics(self.config["group"])
 
         n = 0
         while True:
@@ -97,7 +98,8 @@ class Sync:
     def new_client(self, session, config):
         if "proxy" in config and config["proxy"].get("enable"):
             proxy = config["proxy"]
-            client = TelegramClient(session, config["api_id"], config["api_hash"], proxy=(proxy["protocol"], proxy["addr"], proxy["port"]))
+            client = TelegramClient(session, config["api_id"], config["api_hash"],
+                                    proxy=(proxy["protocol"], proxy["addr"], proxy["port"]))
         else:
             client = TelegramClient(session, config["api_id"], config["api_hash"])
         # hide log messages
@@ -107,11 +109,12 @@ class Sync:
 
         def patched_info(*args, **kwargs):
             if (
-                args[0] == "File lives in another DC" or
-                args[0] == "Starting direct file download in chunks of %d at %d, stride %d"
+                    args[0] == "File lives in another DC" or
+                    args[0] == "Starting direct file download in chunks of %d at %d, stride %d"
             ):
                 return client_logger.debug(*args, **kwargs)
             client_logger._info(*args, **kwargs)
+
         client_logger.info = patched_info
 
         client.start()
@@ -134,7 +137,7 @@ class Sync:
                     logging.info("takeout invalidated. delete the session.session file and try again.")
             else:
                 logging.info("could not initiate takeout.")
-                raise(Exception("could not initiate takeout."))
+                raise (Exception("could not initiate takeout."))
         else:
             return client
 
@@ -175,15 +178,27 @@ class Sync:
                 elif isinstance(m.action, telethon.tl.types.MessageActionChatDeleteUser):
                     typ = "user_left"
 
+            rt = 1
+            r = None
+            if m.reply_to:
+                if m.reply_to.reply_to_top_id:
+                    rt = m.reply_to.reply_to_top_id
+                    if m.reply_to.reply_to_msg_id:
+                        r = m.reply_to.reply_to_msg_id
+                elif m.reply_to.reply_to_msg_id:
+                    rt = m.reply_to.reply_to_msg_id
+
             yield Message(
                 type=typ,
                 id=m.id,
                 date=m.date,
                 edit_date=m.edit_date,
                 content=sticker if sticker else m.raw_text,
-                reply_to=m.reply_to_msg_id if m.reply_to and m.reply_to.reply_to_msg_id else None,
+                reply_to=r,
+                reply_to_topic=rt,
                 user=self._get_user(m.sender, m.chat),
-                media=med
+                media=med,
+                topic=None,
             )
 
     def _fetch_messages(self, group, offset_id, ids=None) -> Message:
@@ -207,20 +222,20 @@ class Sync:
 
         # if user info is empty, check for message from group
         if (
-            u is None and
-            chat is not None and
-            chat.title != ''
-            ):
-                tags.append("group_self")
-                avatar = self._downloadAvatarForUserOrChat(chat)
-                return User(
-                    id=chat.id,
-                    username=chat.title,
-                    first_name=None,
-                    last_name=None,
-                    tags=tags,
-                    avatar=avatar
-                )
+                u is None and
+                chat is not None and
+                chat.title != ''
+        ):
+            tags.append("group_self")
+            avatar = self._downloadAvatarForUserOrChat(chat)
+            return User(
+                id=chat.id,
+                username=chat.title,
+                first_name=None,
+                last_name=None,
+                tags=tags,
+                avatar=avatar
+            )
 
         is_normal_user = isinstance(u, telethon.tl.types.User)
 
@@ -268,7 +283,7 @@ class Sync:
             for i, r in enumerate(msg.media.results.results):
                 options[i]["count"] = r.voters
                 options[i]["percent"] = r.voters / \
-                    total * 100 if total > 0 else 0
+                                        total * 100 if total > 0 else 0
                 options[i]["correct"] = r.correct
 
         return Media(
@@ -402,6 +417,25 @@ class Sync:
             exit(1)
 
         return entity.id
+
+    def _group_topics(self, group):
+        try:
+            group = int(group)
+            entity = self.client.get_entity(group)
+            if not entity.forum:
+                return
+
+            max_topic_count = int(self.config["max_topics"])
+            topic_ids_list = list(range(1, max_topic_count))
+            res = self.client(functions.channels.GetForumTopicsByIDRequest(channel=entity, topics=topic_ids_list))
+
+            for t in res.topics:
+                if not hasattr(t, 'title'):
+                    continue
+
+                self.db.insert_topic(Topic(id=t.id, title=t.title, message_count=None))
+        except Exception as e:
+            logging.error("cannot fetch topics for group: {}".format(group))
 
     def _downloadAvatarForUserOrChat(self, entity):
         avatar = None

@@ -83,7 +83,7 @@ def main():
     b = p.add_argument_group("build")
     b.add_argument("-b", "--build", action="store_true",
                    dest="build", help="build the static site")
-    b.add_argument("-t", "--template", action="store", type=str, default="template.html",
+    b.add_argument("-t", "--template", action="store", type=str, default=None,
                    dest="template", help="path to the template file")
     b.add_argument("--rss-template", action="store", type=str, default=None,
                    dest="rss_template", help="path to the rss template file")
@@ -113,7 +113,7 @@ def main():
             raise
 
         logging.info("created directory '{}'".format(args.path))
-        
+
         # make sure the files are writable
         os.chmod(args.path, 0o755)
         for root, dirs, files in os.walk(args.path):
@@ -155,7 +155,9 @@ def main():
         logging.info("building site")
         config = get_config(args.config)
         b = Build(config, DB(args.data, config["timezone"]), args.symlink)
-        b.load_template(args.template)
+
+        default_template = "topic_template.html" if b.has_topics() else "template.html"
+        b.load_template(args.template or default_template)
         if args.rss_template:
             b.load_rss_template(args.rss_template)
         b.build()

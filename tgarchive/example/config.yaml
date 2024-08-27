@@ -11,6 +11,7 @@ api_hash: "your_api_hash"
 # be a member of this group.
 
 group: "your_group_name or your_group_username or your_group_id(a negative number)"
+max_topics: 10
 
 # Avatars and media will be downloaded into media_dir.
 download_media: True

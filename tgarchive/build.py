@@ -12,7 +12,6 @@ from jinja2 import Template
 
 from .db import User, Message
 
-
 _NL2BR = re.compile(r"\n\n+")
 
 
@@ -33,11 +32,75 @@ class Build:
         # parent messages that may be on arbitrary pages.
         self.page_ids = {}
         self.timeline = OrderedDict()
+        self._topics = None
+
+    def has_topics(self):
+        if not self._topics:
+            self._topics = list(self.db.get_topics())
+        return len(self._topics) != 0
 
     def build(self):
         # (Re)create the output directory.
         self._create_publish_dir()
 
+        if not self._topics:
+            self._topics = list(self.db.get_topics())
+        if len(self._topics) == 0:
+            self._build()
+            return
+
+        self._build_for_topic()
+
+    def _build_for_topic(self):
+        # Queue to store the latest N items to publish in the RSS feed.
+        rss_entries = deque([], self.config["rss_feed_entries"])
+        fname = None
+        for t in self._topics:
+            if t not in self.timeline:
+                self.timeline[t] = []
+
+            # Paginate and fetch messages for the topic until the end..
+            page = 0
+            last_id = 0
+            total = t.message_count
+            total_pages = math.ceil(total / self.config["per_page"])
+
+            while True:
+                messages = list(self.db.get_messages_by_topic(t,
+                                                              last_id, self.config["per_page"]))
+
+                if len(messages) == 0:
+                    break
+
+                last_id = messages[-1].id
+
+                page += 1
+                fname = self.make_filename_for_topic(t, page)
+
+                # Collect the message ID -> page name for all messages in the set
+                # to link to replies in arbitrary positions across months, paginated pages.
+                for m in messages:
+                    self.page_ids[m.id] = fname
+
+                if self.config["publish_rss_feed"]:
+                    rss_entries.extend(messages)
+
+                self._render_page_for_topic(messages, t,
+                                            fname, page, total_pages)
+
+        # The last page chronologically is the latest page. Make it index.
+        if fname:
+            if self.symlink:
+                os.symlink(fname, os.path.join(self.config["publish_dir"], "index.html"))
+            else:
+                shutil.copy(os.path.join(self.config["publish_dir"], fname),
+                            os.path.join(self.config["publish_dir"], "index.html"))
+
+        # Generate RSS feeds.
+        if self.config["publish_rss_feed"]:
+            self._build_rss(rss_entries, "index.rss", "index.atom")
+
+    def _build(self):
         timeline = list(self.db.get_timeline())
         if len(timeline) == 0:
             logging.info("no data found to publish site")
@@ -112,11 +175,30 @@ class Build:
             month.slug, "_" + str(page) if page > 1 else "")
         return fname
 
+    def make_filename_for_topic(self, topic, page) -> str:
+        fname = "{}{}.html".format(
+            topic.id, "_" + str(page) if page > 1 else "")
+        return fname
+
     def _render_page(self, messages, month, dayline, fname, page, total_pages):
         html = self.template.render(config=self.config,
                                     timeline=self.timeline,
                                     dayline=dayline,
                                     month=month,
+                                    messages=messages,
+                                    page_ids=self.page_ids,
+                                    pagination={"current": page,
+                                                "total": total_pages},
+                                    make_filename=self.make_filename,
+                                    nl2br=self._nl2br)
+
+        with open(os.path.join(self.config["publish_dir"], fname), "w", encoding="utf8") as f:
+            f.write(html)
+
+    def _render_page_for_topic(self, messages, topic, fname, page, total_pages):
+        html = self.template.render(config=self.config,
+                                    topic=topic,
+                                    topics=self._topics,
                                     messages=messages,
                                     page_ids=self.page_ids,
                                     pagination={"current": page,
