@@ -1,4 +1,8 @@
 (function() {
+    window.onload = function() {
+        window.scrollTo(0, document.body.scrollHeight);
+    };
+
 	// Hide the open burger menu when clicking nav links. 
 	const burger = document.querySelector("#burger");
 	document.querySelectorAll(".timeline a, .dayline a").forEach((e) => {

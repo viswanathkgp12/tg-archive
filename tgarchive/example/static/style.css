@@ -406,3 +406,7 @@ div.body > div.text {
 		position: relative;
 	}
 }
+
+.ripple {
+  cursor: pointer;
+}
