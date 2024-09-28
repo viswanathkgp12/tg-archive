@@ -1,6 +1,9 @@
 (function() {
     window.onload = function() {
-        window.scrollTo(0, document.body.scrollHeight);
+        const hash = window.location.hash;
+        if(!hash || !/^#\d+$/.test(hash)) {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
     };
 
 	// Hide the open burger menu when clicking nav links. 
