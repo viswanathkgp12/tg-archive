@@ -211,26 +211,58 @@
 <script src="static/main.js"></script>
 </body>
 <script>
+	const pageIds = {{ page_ids|tojson|safe }};
+	let groupId = {{ config.group }};
+	groupId = parseInt(groupId);
+	groupId = Math.abs(groupId);
+
 	(function() {
 	const rippleContainers = document.querySelectorAll('.ripple');
 
 	rippleContainers.forEach(container => {
 		container.addEventListener('click', (event) => {
-		event.preventDefault();
-		event.stopPropagation();
+			event.preventDefault();
+			event.stopPropagation();
 
-		const clickedElement = event.target;
+			const clickedElement = event.target;
 
-		if (clickedElement.hasAttribute('data-reply-link')) {
-		const replyLinkUrl = clickedElement.getAttribute('data-reply-link');
+			if (clickedElement.hasAttribute('data-reply-link')) {
+				const replyLinkUrl = clickedElement.getAttribute('data-reply-link');
 
-		// Redirect the user to the extracted URL
-		window.location.href = replyLinkUrl;
-		} else {
-		console.warn("Clicked element doesn't have a 'data-reply-link' attribute. No redirection performed.");
-		}
-  });
-});
+				// Redirect the user to the extracted URL
+				window.location.href = replyLinkUrl;
+			} else {
+				console.warn("Clicked element doesn't have a 'data-reply-link' attribute. No redirection performed.");
+			}
+  		});
+	});
+
+	const textLinkContainers = document.querySelectorAll('.text a');
+
+	textLinkContainers.forEach(container => {
+		container.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+
+			const clickedElement = event.target;
+			const oldLink = clickedElement.getAttribute('href');
+
+			if (oldLink.startsWith(`https://t.me/c/${groupId}`)) {
+				const linkParts = oldLink.split('/');
+				const number = linkParts.pop().split('?')[0];
+				const topicPage = pageIds[number];
+				clickedElement.setAttribute("href", `${topicPage}#${number}`);
+			}
+
+			const clickEvent = new MouseEvent('click', {
+    			view: window,
+    			bubbles: true,
+    			cancelable: true
+			});
+			clickedElement.dispatchEvent(clickEvent);
+            return false;
+  		});
+	});
 	})();
 </script>
 </html>
