@@ -6,9 +6,14 @@
 
 
 ## Preview
-The [@fossunited](https://tg.fossunited.org) Telegram group archive.
+Demo Telegram group archive.
 
-![image](https://user-images.githubusercontent.com/547147/111869398-44188980-89a5-11eb-936f-01d98276ba6a.png)
+### Changes in fork
+- Group messages by topic and paginate accordingly
+![image](https://github.com/user-attachments/assets/df8900f9-7ebe-4d76-950e-f2107778f6c4)
+
+- Quote reply messages
+![image](https://github.com/user-attachments/assets/550bd4a5-fa6d-4438-b3ba-5688e35211dd)
 
 
 ## How it works
